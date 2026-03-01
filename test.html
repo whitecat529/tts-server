@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>TTS 测试客户端</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; line-height: 1.6; }
+        .task-item { border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .status-processing { color: orange; }
+        .status-ready { color: green; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h2>TTS 控制台 (原生 JS 版)</h2>
+
+    <textarea id="textContent" rows="4" cols="50" placeholder="输入要转换的文字..."></textarea><br>
+    <button id="submitBtn">开始转换</button>
+
+    <div id="taskList">
+        <h3>任务列表</h3>
+    </div>
+
+    <script>
+        const userId = "user_html_test"; // 模拟用户ID
+        const SERVER_URL = "http://localhost:3000";
+
+        // 1. 初始化 Socket 连接
+        const socket = io(SERVER_URL);
+
+        socket.on('connect', () => {
+            console.log("已连接到服务器");
+            // 告诉服务器我是谁
+            socket.emit('join', userId);
+        });
+
+        // 2. 监听任务完成通知
+        socket.on('tts-finished', async (data) => {
+            const { jobId, mp3Url, srtUrl } = data;
+            console.log("任务完成:", jobId);
+
+            // 更新 UI 状态
+            updateTaskUI(jobId, 'ready', mp3Url);
+
+            // 模拟下载并存储 (对应你 Hook 里的 fetch 部分)
+            try {
+                const res = await fetch(mp3Url);
+                const blob = await res.blob();
+                console.log(`文件已获取，大小: ${blob.size} bytes`);
+                // 这里可以调用 IndexedDB 存储逻辑
+            } catch (e) {
+                console.error("下载失败", e);
+            }
+        });
+
+        // 3. 提交任务逻辑
+        document.getElementById('submitBtn').onclick = async () => {
+            const text = document.getElementById('textContent').value;
+            if (!text) return alert("请输入文字");
+
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+
+            try {
+                // 发送 HTTP POST
+                const response = await fetch(`${SERVER_URL}/api/tts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, userId })
+                });
+
+                const { jobId } = await response.json();
+
+                // 在界面上创建一个任务条目
+                createTaskUI(jobId);
+            } catch (err) {
+                console.error("提交失败", err);
+            } finally {
+                btn.disabled = false;
+            }
+        };
+
+        // --- UI 辅助函数 ---
+        function createTaskUI(jobId) {
+            const div = document.createElement('div');
+            div.id = jobId;
+            div.className = 'task-item';
+            div.innerHTML = `任务: ${jobId} - <span class="status-processing">处理中...</span>`;
+            document.getElementById('taskList').appendChild(div);
+        }
+
+        function updateTaskUI(jobId, status, url) {
+            const el = document.getElementById(jobId);
+            if (el) {
+                el.innerHTML = `任务: ${jobId} - <span class="status-ready">✅ 已完成</span>
+                                <a href="${url}" target="_blank">点击预览音频</a>`;
+            }
+        }
+    </script>
+</body>
+</html>
